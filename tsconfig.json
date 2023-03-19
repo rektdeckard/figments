@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2016", "DOM", "DOM.Iterable"],
+    "target": "ES2016",
+    "typeRoots": ["./node_modules/@types", "./node_modules/@figma"],
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true
+  }
+}

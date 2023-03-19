@@ -1,0 +1,31 @@
+{
+  "name": "figments-example",
+  "version": "0.1.0",
+  "main": "dist/code.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "ts:build": "tsc -p tsconfig.json",
+    "ts:start": "tsc -w",
+    "start": "npx webpack --mode=development --watch",
+    "build": "npx webpack --mode=production"
+  },
+  "dependencies": {
+    "react": "^17",
+    "react-dom": "^17"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.62.0",
+    "@types/react": "^17",
+    "@types/react-dom": "^17",
+    "css-loader": "^5",
+    "html-webpack-inline-source-plugin": "^1.0.0-beta.2",
+    "html-webpack-plugin": "^4",
+    "style-loader": "^2",
+    "ts-loader": "^8",
+    "url-loader": "^4.1.1",
+    "webpack": "^4",
+    "webpack-cli": "^4",
+    "typescript": "^5.0.2"
+  }
+}

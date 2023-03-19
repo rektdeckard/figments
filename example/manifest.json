@@ -1,0 +1,13 @@
+{
+  "name": "figments-example",
+  "id": "1219012658391928642",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "capabilities": [],
+  "enableProposedApi": true,
+  "editorType": [
+    "figma",
+    "figjam"
+  ],
+  "ui": "dist/ui.html"
+}
