@@ -1,9 +1,9 @@
 import * as React from "react";
 
-import { Storage, ResponseType } from "../../../src";
+import { Storage, StorageResponseMethod } from "../../../src";
 
-const channelA = Storage.createClient("channel_a");
-const channelB = Storage.createClient("channel_b");
+const channelA = Storage.createClient("observed");
+const channelB = Storage.createClient("async");
 
 type Data = {
   name: string;
@@ -20,36 +20,22 @@ const StorageExample = () => {
   const [storageB, setStorageB] = React.useState<Data | null>(null);
 
   React.useEffect(() => {
-    channelA.register<Data | null>("listener", (event) => {
-      const { type, payload } = event.data.pluginMessage;
+    channelA.enable();
+    channelB.enable();
 
-      if (payload.key !== "stuff") return;
+    channelA.observe<Data>(["stuff"], (event) => {
+      const { method, value } = event.data.pluginMessage;
 
-      switch (type) {
-        case ResponseType.GET:
-        case ResponseType.SET:
-          setStorageA(payload.value);
+      switch (method) {
+        case StorageResponseMethod.GET:
+        case StorageResponseMethod.SET:
+          setStorageA(value);
           break;
-        case ResponseType.DELETE:
+        case StorageResponseMethod.DELETE:
           setStorageA(null);
           break;
-        default:
-          return;
-      }
-    });
-
-    channelB.register<Data | null>("listener", (event) => {
-      const { type, payload } = event.data.pluginMessage;
-
-      if (payload.key !== "stuff") return;
-
-      switch (type) {
-        case ResponseType.GET:
-        case ResponseType.SET:
-          setStorageB(payload.value);
-          break;
-        case ResponseType.DELETE:
-          setStorageB(null);
+        case StorageResponseMethod.KEYS:
+          console.log(value);
           break;
         default:
           return;
@@ -57,15 +43,15 @@ const StorageExample = () => {
     });
 
     return () => {
-      channelA.unregister("listener");
-      channelB.unregister("listener");
+      channelA.disable();
+      channelB.disable();
     };
   }, []);
 
   return (
     <div>
       <h3>Storage</h3>
-      <strong>Channel A</strong>
+      <strong>With Observer</strong>
       <div className="row">
         <div className="row-part">
           <label htmlFor="boolA">
@@ -89,19 +75,17 @@ const StorageExample = () => {
         <div className="row-part">
           <button
             onClick={() =>
-              channelA.requestSet("stuff", { name: nameA, bool: boolA }, true)
+              channelA.requestSet("stuff", { name: nameA, bool: boolA })
             }
           >
-            Store
+            SET
           </button>
-          <button onClick={() => channelA.requestReset("stuff", true)}>
-            Reset
-          </button>
+          <button onClick={() => channelA.requestDelete("stuff")}>DELETE</button>
         </div>
       </div>
-      <pre>{JSON.stringify(storageA)}</pre>
+      <pre>{JSON.stringify(storageA, null, 2)}</pre>
 
-      <strong>Channel B</strong>
+      <strong>With Async</strong>
       <div className="row">
         <div className="row-part">
           <label htmlFor="boolB">
@@ -124,18 +108,29 @@ const StorageExample = () => {
         </div>
         <div className="row-part">
           <button
-            onClick={() =>
-              channelB.requestSet("stuff", { name: nameB, bool: boolB }, true)
-            }
+            onClick={async () => {
+              const data = await channelB.setAsync("other_stuff", {
+                name: nameB,
+                bool: boolB,
+              });
+            }}
           >
-            Store
+            SET
           </button>
-          <button onClick={() => channelB.requestReset("stuff", true)}>
-            Reset
+          <button
+            onClick={async () => {
+              const data = await channelB.getAsync<Data>("other_stuff");
+              setStorageB(data);
+            }}
+          >
+            GET
+          </button>
+          <button onClick={() => channelB.requestDelete("other_stuff")}>
+            DELETE
           </button>
         </div>
       </div>
-      <pre>{JSON.stringify(storageB)}</pre>
+      <pre>{JSON.stringify(storageB, null, 2)}</pre>
     </div>
   );
 };

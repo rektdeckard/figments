@@ -1,15 +1,10 @@
+export { default as Fetch, FetchClient, FetchController } from "./fetch";
+export type { FetchResponseUnwrapped as TypedFetchResponse } from "./fetch";
 export {
   default as Storage,
   StorageClient,
   StorageController,
-  RequestType,
-  ResponseType,
-} from "./Storage";
-export type {
-  Request,
-  Response,
-  GetAsyncPayload,
-  SetAsyncPayload,
-  DeleteAsyncPayload,
-  KeysAsyncPayload,
-} from "./Storage";
+  StorageRequestMethod,
+  StorageResponseMethod,
+} from "./storage";
+export type { StorageResponse } from "./storage";

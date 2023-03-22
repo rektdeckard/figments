@@ -1,138 +1,299 @@
-export enum RequestType {
+import { prid, assertMainThread } from "./utils";
+
+const STORAGE_INTERNAL = "__storage_internal";
+
+export enum StorageRequestMethod {
   GET = "req_get",
   SET = "req_set",
   DELETE = "req_del",
   KEYS = "req_keys",
 }
 
-export enum ResponseType {
+export enum StorageResponseMethod {
   GET = "res_get",
   SET = "res_set",
   DELETE = "res_del",
   KEYS = "res_keys",
 }
 
-export type Request<T = unknown> =
-  | { type: RequestType.GET; payload: GetAsyncPayload }
-  | { type: RequestType.SET; payload: SetAsyncPayload<T> }
-  | { type: RequestType.DELETE; payload: GetAsyncPayload }
-  | { type: RequestType.KEYS; payload?: never };
+type StorageMessageBase = {
+  type: typeof STORAGE_INTERNAL;
+  channel?: string;
+  id?: string;
+};
 
-export type Response<T = unknown> =
-  | { type: ResponseType.GET; payload: SetAsyncPayload<T> }
-  | { type: ResponseType.SET; payload: SetAsyncPayload<T> }
-  | { type: ResponseType.DELETE; payload?: DeleteAsyncPayload }
-  | { type: ResponseType.KEYS; payload: KeysAsyncPayload };
+type StorageRequest<T = unknown> = StorageMessageBase &
+  (
+    | { method: StorageRequestMethod.GET; key: string; value?: never }
+    | { method: StorageRequestMethod.SET; key: string; value: T }
+    | { method: StorageRequestMethod.DELETE; key: string; value?: never }
+    | { method: StorageRequestMethod.KEYS; key?: never; value?: never }
+  );
 
-export interface WithChannel {
-  channel: string;
-}
+export type StorageResponse<T = unknown> = StorageMessageBase &
+  (
+    | { method: StorageResponseMethod.GET; key: string; value: T | null }
+    | { method: StorageResponseMethod.SET; key: string; value: T | null }
+    | { method: StorageResponseMethod.DELETE; key: string; value?: never }
+    | { method: StorageResponseMethod.KEYS; key?: never; value?: string[] }
+  );
 
-export interface WithUpdate {
-  update?: boolean;
-}
-
-export interface GetAsyncPayload extends WithChannel {
-  key: string;
-}
-
-export interface SetAsyncPayload<T = unknown>
-  extends GetAsyncPayload,
-    WithUpdate {
-  value: T;
-}
-
-export interface DeleteAsyncPayload extends GetAsyncPayload, WithUpdate {}
-
-export interface KeysAsyncPayload extends WithChannel {
-  key?: never;
-  keys: string[];
-}
-
-export type StorageListener<T = unknown> = (
-  event: MessageEvent<{ pluginMessage: Response<T> }>
+type StorageListener<T = unknown> = (
+  event: MessageEvent<{
+    pluginMessage: StorageResponse<T>;
+  }>
 ) => void;
 
-export default class Storage {
-  #channel: string;
-  #client: StorageClient;
-  #controller: StorageController;
+type StorageResolve<T> = (value: T | PromiseLike<T>) => void;
+type StorageReject = (reason?: any) => void;
 
-  constructor(channel: string = "") {
+export default class Storage {
+  static createClient(channel?: string) {
+    return new StorageClient(channel);
+  }
+  static createController(channel?: string) {
+    return new StorageController(channel);
+  }
+}
+
+export class StorageClient {
+  #channel?: string;
+  #receiver: StorageListener;
+  #observers: Map<string, StorageListener> = new Map();
+  #pending: Map<string, [StorageResolve<unknown>, StorageReject]> = new Map();
+  #enabled: boolean = false;
+
+  constructor(channel?: string) {
     this.#channel = channel;
-    this.#client = new StorageClient(channel);
-    this.#controller = new StorageController(channel);
+    this.#receiver = (event) => {
+      if (!event.data.pluginMessage) return;
+      const { type, channel, id, value } = event.data.pluginMessage;
+
+      if (
+        type !== STORAGE_INTERNAL ||
+        !id ||
+        (!!this.#channel && channel !== this.#channel)
+      )
+        return;
+
+      const [resolve] = this.#pending.get(id) ?? [];
+      if (!resolve) return;
+
+      resolve(value);
+
+      this.#pending.delete(id);
+    };
+  }
+
+  #assertEnabled() {
+    if (!this.#enabled) {
+      throw new Error("FetchController must be enabled");
+    }
+  }
+
+  enable() {
+    window.addEventListener("message", this.#receiver);
+    for (const o of this.#observers.values()) {
+      window.addEventListener("message", o);
+    }
+    this.#enabled = true;
+    return this;
+  }
+
+  disable() {
+    window.removeEventListener("message", this.#receiver);
+    for (const o of this.#observers.values()) {
+      window.removeEventListener("message", o);
+    }
+    this.#enabled = false;
+    return this;
   }
 
   get channel() {
     return this.#channel;
   }
 
-  get client() {
-    return this.#client;
+  async getAsync<T>(key: string): Promise<T | null> {
+    this.#assertEnabled();
+
+    const id = prid();
+    const promise = new Promise<T | null>((resolve, reject) => {
+      this.#pending.set(id, [resolve, reject]);
+    });
+
+    const pluginMessage: StorageRequest<T> = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.GET,
+      channel: this.#channel,
+      id,
+      key,
+    };
+
+    parent.postMessage({ pluginMessage }, "*");
+    return promise;
   }
 
-  get controller() {
-    return this.#controller;
+  async setAsync<T>(key: string, value: T): Promise<void> {
+    this.#assertEnabled();
+
+    const id = prid();
+    const promise = new Promise<void>((resolve, reject) => {
+      this.#pending.set(id, [resolve, reject]);
+    });
+
+    const pluginMessage: StorageRequest<T> = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.SET,
+      channel: this.#channel,
+      id,
+      key,
+      value,
+    };
+
+    parent.postMessage({ pluginMessage }, "*");
+    return promise;
   }
 
-  static createClient(channel: string) {
-    return new StorageClient(channel);
+  async deleteAsync(key: string): Promise<void> {
+    this.#assertEnabled();
+
+    const id = prid();
+    const promise = new Promise<void>((resolve, reject) => {
+      this.#pending.set(id, [resolve, reject]);
+    });
+
+    const pluginMessage: StorageRequest = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.DELETE,
+      channel: this.#channel,
+      id,
+      key,
+    };
+
+    parent.postMessage({ pluginMessage }, "*");
+    return promise;
   }
 
-  static createController(channel: string) {
-    return new StorageController(channel);
+  async keysAsync(): Promise<string[]> {
+    this.#assertEnabled();
+
+    const id = prid();
+    const promise = new Promise<string[]>((resolve, reject) => {
+      this.#pending.set(id, [resolve, reject]);
+    });
+
+    const pluginMessage: StorageRequest = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.KEYS,
+      channel: this.#channel,
+      id,
+    };
+
+    parent.postMessage({ pluginMessage }, "*");
+    return promise;
   }
-}
 
-export class StorageController {
-  #channel: string;
-  #listener: MessageEventHandler;
-  #enabled: boolean = false;
+  observe<T>(keys: string[], listener: StorageListener<T>) {
+    const observerId = prid();
+    const proxyListener: StorageListener<T | null> = (event) => {
+      if (!event.data.pluginMessage) return;
 
-  constructor(channel: string) {
-    this.#channel = channel;
-    this.#listener = <T>(pm: Request<T>, pr) => {
-      if (!pm?.type || !pm?.payload) return;
-
-      const { type, payload } = pm;
+      const { type, channel, key } = event.data.pluginMessage;
       if (
-        payload?.channel !== this.#channel ||
-        ![
-          RequestType.GET,
-          RequestType.SET,
-          RequestType.DELETE,
-          RequestType.KEYS,
-        ].includes(type)
+        type !== STORAGE_INTERNAL ||
+        (!!this.#channel && channel !== this.#channel) ||
+        !keys.includes(key)
       ) {
         return;
       }
 
-      switch (type) {
-        case RequestType.GET:
-          this.getRequest(pm.payload);
+      listener(event);
+    };
+
+    window.addEventListener("message", proxyListener);
+    this.#observers.set(observerId, listener);
+
+    return observerId;
+  }
+
+  unobserve(observerId: string) {
+    window.removeEventListener("message", this.#observers.get(observerId));
+    this.#observers.delete(observerId);
+  }
+
+  requestGet(key: string) {
+    const pluginMessage: StorageRequest = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.GET,
+      channel: this.#channel,
+      key,
+    };
+    parent.postMessage({ pluginMessage }, "*");
+  }
+
+  requestSet<T>(key: string, value: T) {
+    const pluginMessage: StorageRequest<T> = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.SET,
+      channel: this.#channel,
+      key,
+      value,
+    };
+    parent.postMessage({ pluginMessage }, "*");
+  }
+
+  requestDelete(key: string) {
+    const pluginMessage: StorageRequest = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.DELETE,
+      channel: this.#channel,
+      key,
+    };
+    parent.postMessage({ pluginMessage }, "*");
+  }
+
+  requestKeys() {
+    const pluginMessage: StorageRequest = {
+      type: STORAGE_INTERNAL,
+      method: StorageRequestMethod.KEYS,
+      channel: this.#channel,
+    };
+    parent.postMessage({ pluginMessage }, "*");
+  }
+}
+
+export class StorageController {
+  #channel?: string;
+  #listener: MessageEventHandler;
+  #enabled: boolean = false;
+
+  constructor(channel?: string) {
+    this.#channel = channel;
+    this.#listener = <T>(pm: StorageRequest<T>, _props) => {
+      const { type, channel, method } = pm;
+      if (type !== STORAGE_INTERNAL || channel !== this.channel) return;
+
+      switch (method) {
+        case StorageRequestMethod.GET:
+          this.handleGet(pm);
           break;
-        case RequestType.SET:
-          this.setRequest(pm.payload as SetAsyncPayload<T>);
+
+        case StorageRequestMethod.SET:
+          this.handleSet(pm);
           break;
-        case RequestType.DELETE:
-          this.deleteRequest(pm.payload);
+
+        case StorageRequestMethod.DELETE:
+          this.handleDelete(pm);
           break;
-        case RequestType.KEYS:
-          this.keysRequest();
+
+        case StorageRequestMethod.KEYS:
+          this.handleKeys(pm);
           break;
+
         default:
           return;
       }
     };
-  }
-
-  #assertMainThread() {
-    if (!figma) {
-      throw new Error(
-        "StorageContoller cannot be initialized from UI thread. Set this up in your main thread."
-      );
-    }
   }
 
   #assertEnabled() {
@@ -146,7 +307,7 @@ export class StorageController {
   }
 
   enable() {
-    this.#assertMainThread();
+    assertMainThread();
 
     if (!this.#enabled) {
       figma.ui.on("message", this.#listener);
@@ -156,7 +317,7 @@ export class StorageController {
   }
 
   disable() {
-    this.#assertMainThread();
+    assertMainThread();
 
     if (this.#enabled) {
       figma.ui.off("message", this.#listener);
@@ -165,156 +326,73 @@ export class StorageController {
     return this;
   }
 
-  async getRequest(payload: GetAsyncPayload) {
-    this.#assertMainThread();
+  async handleGet<T>(req: StorageRequest<T>) {
+    assertMainThread();
     this.#assertEnabled();
 
-    const value = await figma.clientStorage.getAsync(
-      `${this.channel}_${payload.key}`
-    );
-    if (typeof value !== "undefined") {
-      figma.ui.postMessage({
-        type: ResponseType.GET,
-        payload: { ...payload, value },
-      });
-    }
+    const value = await figma.clientStorage.getAsync(req.key);
+
+    const message: StorageResponse<T> = {
+      type: STORAGE_INTERNAL,
+      method: StorageResponseMethod.GET,
+      channel: this.#channel,
+      id: req.id,
+      key: req.key,
+      value,
+    };
+
+    figma.ui.postMessage(message);
   }
 
-  async setRequest(payload: SetAsyncPayload) {
-    this.#assertMainThread();
+  async handleSet<T>(req: StorageRequest<T>) {
+    assertMainThread();
     this.#assertEnabled();
 
-    await figma.clientStorage.setAsync(
-      `${this.channel}_${payload.key}`,
-      payload.value
-    );
-    if (payload.update) {
-      figma.ui.postMessage({
-        type: ResponseType.SET,
-        payload,
-      });
-    }
+    await figma.clientStorage.setAsync(req.key, req.value);
+
+    const message: StorageResponse<T> = {
+      type: STORAGE_INTERNAL,
+      method: StorageResponseMethod.SET,
+      channel: this.#channel,
+      id: req.id,
+      key: req.key,
+      value: req.value,
+    };
+
+    figma.ui.postMessage(message);
   }
 
-  async deleteRequest(payload: DeleteAsyncPayload) {
-    this.#assertMainThread();
+  async handleDelete(req: StorageRequest) {
+    assertMainThread();
     this.#assertEnabled();
 
-    await figma.clientStorage.deleteAsync(payload.key);
-    if (payload.update) {
-      figma.ui.postMessage({
-        type: ResponseType.DELETE,
-        payload: { ...payload, value: undefined },
-      });
-    }
+    await figma.clientStorage.deleteAsync(req.key);
+
+    const message: StorageResponse = {
+      type: STORAGE_INTERNAL,
+      method: StorageResponseMethod.DELETE,
+      channel: this.#channel,
+      id: req.id,
+      key: req.key,
+    };
+
+    figma.ui.postMessage(message);
   }
 
-  async keysRequest() {
-    this.#assertMainThread();
+  async handleKeys(req: StorageRequest) {
+    assertMainThread();
     this.#assertEnabled();
 
-    const keys = await figma.clientStorage.keysAsync();
-    const keyRegex = new RegExp(`/^${this.channel}_`);
+    const allKeys = await figma.clientStorage.keysAsync();
 
-    figma.ui.postMessage({
-      type: ResponseType.KEYS,
-      payload: {
-        channel: this.#channel,
-        keys: keys.map((key) => key.replace(keyRegex, "")),
-      },
-    });
-  }
-}
+    const message: StorageResponse = {
+      type: STORAGE_INTERNAL,
+      method: StorageResponseMethod.KEYS,
+      channel: this.#channel,
+      id: req.id,
+      value: allKeys,
+    };
 
-export class StorageClient {
-  #channel: string;
-  #listeners: Map<string, StorageListener> = new Map();
-
-  constructor(channel: string) {
-    this.#channel = channel;
-  }
-
-  get channel() {
-    return this.#channel;
-  }
-
-  register<T>(
-    stream: string,
-    listener?: StorageListener<T> | null,
-    initKeys?: string[]
-  ) {
-    if (listener) {
-      const proxyListener: StorageListener<T> = (event) => {
-        if (!event.data.pluginMessage) return;
-
-        const { type, payload } = event.data.pluginMessage;
-        if (
-          !payload ||
-          payload?.channel !== this.#channel ||
-          ![
-            ResponseType.GET,
-            ResponseType.SET,
-            ResponseType.DELETE,
-            ResponseType.KEYS,
-          ].includes(type)
-        ) {
-          return;
-        } else {
-          listener(event);
-        }
-      };
-
-      window.addEventListener("message", proxyListener);
-      this.#listeners.set(stream, listener);
-    }
-
-    initKeys?.forEach(this.requestGet);
-
-    return this;
-  }
-
-  unregister(stream: string) {
-    window.removeEventListener("message", this.#listeners.get(stream));
-    this.#listeners.delete(stream);
-  }
-
-  requestGet(key: string) {
-    parent.postMessage(
-      {
-        pluginMessage: {
-          type: RequestType.GET,
-          payload: { key, channel: this.#channel },
-        },
-      },
-      "*"
-    );
-  }
-
-  requestSet<T>(key: string, value: T, update?: boolean) {
-    parent.postMessage(
-      {
-        pluginMessage: {
-          type: RequestType.SET,
-          payload: { key, channel: this.#channel, update, value },
-        },
-      },
-      "*"
-    );
-  }
-
-  requestReset(key: string, update?: boolean) {
-    parent.postMessage(
-      {
-        pluginMessage: {
-          type: RequestType.DELETE,
-          payload: { key, channel: this.#channel, update },
-        },
-      },
-      "*"
-    );
-  }
-
-  requestKeys() {
-    parent.postMessage({ pluginMessage: { type: RequestType.KEYS } }, "*");
+    figma.ui.postMessage(message);
   }
 }

@@ -1,78 +1,54 @@
 import * as React from "react";
-import { ResponseType, Storage } from "../../../src";
+import { Storage, StorageResponseMethod } from "../../../src";
 
 type UseStorageOptions = {
-  channel: string;
+  channel?: string;
   key: string;
   optimistic?: boolean;
 };
 
-const usePersistedState = <T = unknown>(
-  initial: T | null,
-  options: UseStorageOptions
-): [T | null, (value: T) => void] => {
-  const [data, setData] = React.useState<T | null>(
-    options.optimistic ? initial ?? null : null
-  );
-  const client = React.useRef(
-    Storage.createClient(options.channel).register<T | null>(
-      "__internal",
-      (event) => {
-        const { type, payload } = event.data.pluginMessage;
-        if (payload.key !== options.key) return;
+const usePersistedState = <T>(
+  options: UseStorageOptions,
+  initial: T
+): [T | null, (value: T) => void, () => void] => {
+  const [data, setData] = React.useState<T | null>(initial ?? null);
+  const client = React.useRef(Storage.createClient(options.channel).enable());
 
-        switch (type) {
-          case ResponseType.GET:
-            setData(payload.value);
-            break;
-          default:
-            return;
-        }
+  React.useEffect(() => {
+    const observerId = client.current.observe<T>([options.key], (event) => {
+      const { method, value } = event.data.pluginMessage;
+      switch (method) {
+        case StorageResponseMethod.GET:
+        case StorageResponseMethod.SET:
+          setData(value);
+          break;
+        case StorageResponseMethod.DELETE:
+          setData(null);
+          break;
+        default:
+          return;
       }
-    )
-  );
+    });
 
-  const init = React.useCallback(
-    (channel: string, key: string, optimistic?: boolean) => {
-      client.current.unregister("__internal");
-      client.current = Storage.createClient(channel).register<T | null>(
-        "__internal",
-        (event) => {
-          const { type, payload } = event.data.pluginMessage;
-          if (payload.key !== key) return;
+    client.current.requestGet(options.key);
 
-          switch (type) {
-            case ResponseType.GET:
-              setData(payload.value);
-              break;
-            default:
-              return;
-          }
-        },
-        !optimistic ? [key] : null
-      );
-    },
-    []
-  );
+    return () => client.current.unobserve(observerId);
+  }, [options.key]);
 
   const set = React.useCallback(
     (value: T) => {
-      if (options.optimistic) {
-        setData(value);
-      }
-      client.current.requestSet(options.key, value, !options.optimistic);
+      if (options.optimistic) setData(value);
+      client.current.requestSet(options.key, value);
     },
     [options.key, options.optimistic]
   );
 
-  React.useEffect(() => {
-    client.current.requestGet(options.key);
-    return () => {
-      init(options.channel, options.key, options.optimistic);
-    };
-  }, [options.channel, options.key, options.optimistic]);
+  const reset = React.useCallback(() => {
+    if (options.optimistic) setData(initial);
+    client.current.requestDelete(options.key);
+  }, [options.key]);
 
-  return [data, set];
+  return [data, set, reset];
 };
 
 export default usePersistedState;

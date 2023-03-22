@@ -1,5 +1,12 @@
 :root {
-  font-family: monospace;
+  font-family: Inter, "Sans Serif";
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 600px;
 }
 
 .row {

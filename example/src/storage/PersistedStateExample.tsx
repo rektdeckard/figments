@@ -8,21 +8,24 @@ type Data = {
 };
 
 const PersistedStateExample = () => {
-  const [nameA, setNameA] = usePersistedState<string>("", {
-    channel: "channel_a",
-    key: "nameA",
-    optimistic: true,
-  });
-  const [boolA, setBoolA] = usePersistedState<boolean>(false, {
-    channel: "channel_a",
-    key: "boolA",
-    optimistic: true,
-  });
+  const [nameA, setNameA] = usePersistedState<string | null>(
+    {
+      channel: "observed",
+      key: "nameA",
+    },
+    ""
+  );
+  const [boolA, setBoolA] = usePersistedState<boolean>(
+    {
+      channel: "observed",
+      key: "boolA",
+    },
+    false
+  );
 
   return (
     <div>
       <h3>Persisted state</h3>
-      <strong>Data</strong>
       <div className="row">
         <div className="row-part">
           <label htmlFor="boolA">
