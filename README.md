@@ -10,7 +10,7 @@ yarn add figments
 
 ## Fetch
 
-Abstracts away the message-passing needed to make network requests from UI code, and lets you call `fetch` in the UI thread just as you do in the plugin main thread.
+A UI-thread "hole punch" that allows you to make network requests directly from your plugin UI code, without having to deal with passing messages across plugin/UI boundary. Exposes the same `async` API as `fetch`.
 
 ### Usage
 
@@ -21,7 +21,7 @@ To use Fetch, first enable the `FetchController` in your main plugin thread:
 import { Fetch } from "figments";
 
 (function main() {
-  // Initialize the FetchController (a static singleton) and enable it.
+  // Enable the controller, that's it!
   Fetch.controller.enable();
 
   figma.ui.on("message", (msg, props) => {
@@ -32,7 +32,7 @@ import { Fetch } from "figments";
 })();
 ```
 
-Then in your client code, construct a `FetchClient` and enable it too. You can now make network requests directly from your UI thread:
+Then in your client code, construct a `FetchClient` and enable it too. You can now make network requests from your UI thread:
 
 ```ts
 /* ui.ts */
@@ -77,7 +77,7 @@ const res = await client.fetch("https://httpbin.org/post", {
 
 ### FetchController
 
-The singleton main thread controller that actually calls the `fetch` API and handles messaging with the client. Same as `Fetch.controller`.
+The singleton main-thread controller that actually calls the `fetch` API and handles messaging with the client. Same as `Fetch.controller`.
 
 **Methods**
 
@@ -86,7 +86,7 @@ The singleton main thread controller that actually calls the `fetch` API and han
 
 ### FetchClient
 
-The UI thread client that allows you to interact with the `fetch` API. You can create as many clients as you like.
+The UI-thread client that allows you to interact with the `fetch` API. You can create as many clients as you like.
 
 **Methods**
 
@@ -100,7 +100,9 @@ The UI thread client that allows you to interact with the `fetch` API. You can c
 ### Types
 
 ```ts
-// A serializable form of Figma's FetchResponse
+// The response object returned by `client.fetch()`is more or less
+// a serialized form of the normal FetchResponse
+
 export type FetchResponseUnwrapped<T = unknown> = {
   headersObject?: { [name: string]: string };
   ok: boolean;
@@ -115,7 +117,7 @@ export type FetchResponseUnwrapped<T = unknown> = {
 
 ## Storage
 
-Abstracts away the message-passing needed to access `clientStorage` from UI code and lets you write code in the UI thread just as you do in the plugin thread, in addition to some other cool features for dealing with persisted data.
+A UI-thread "hole punch" that allows you to call methods on `clientStorage` just as you would from the main thread, in addition to some other cool features for dealing with persisted data.
 
 Using Figma's `clientStorage` API from UIs can be cumbersome – the UI thread can't talk directly to the storage, and we have to rely on event handlers and emitters on to do anything across the plugin/UI boundary. This usually involves a fair bit of boilerplate, and forces you to use synchronous code.
 
@@ -215,14 +217,64 @@ The UI thread client that allows you to interact with storage. You can have as m
 
 **Methods**
 
-- `constructor(channel?: string, observers?: [ObserverKeys, StorageListener][]): StorageClient`: Create a new client. Observers may be added for convenience during initialization to watch for changes to specific keys on this channel. Observers added this way cannot be
+- `constructor(channel?: string, observers?: [ObserverKeys, StorageListener][]): StorageClient`: Create a new client. Observers may be added for convenience during initialization to watch for changes to specific keys on this channel. Observers added this way cannot be removed except by calling `unobserveAll()`.
 - `enable(): void`: Enable the client, allowing it to send and receive storage requests to the controller.
 - `disable(): void`: Disable the client, causing it to stop listening for responses.
 - `getAsync<T>(key: string): Promise<T | null>`: Get the value for `key` from storage.
 - `setAsync<T>(key: string, value: T): Promise<void>`: Set `key` to `value` in storage.
 - `deleteAsync<T>(key: string): Promise<void>`: Delete the entry for `key` from storage.
 - `keysAsync(): Promise<string[]>`: Get all stored keys for this plugin.
+- `observe<T>(keys: ObserverKeys, listener: StorageListener<T>): string`: Listen for changes to one or more keys on this channel. Returns the `observerId` of the observer.
+- `unobserve(observerId: string): Remove an observer registered with `observe()`.
+- `unobserveAll(): Remove all active observers.
+- `requestGet(key: string): void`: Emit a message for the controller to get a value from storage, but don't wait for the response. Useful in synchronous code, or when registered observers will handle the response.
+- `requestSet<T>(key: string, value: T): void`: Emit a message for the controller to set a value from storage, but don't wait for the response. Useful in synchronous code, or when registered observers will handle the response.
+- `requestDelete(key: string): void`: Emit a message for the controller to delete a value from storage, but don't wat for the response. Useful in synchronous code, or when registered observers will handle the response.
+- `requestKeys(): void`: Emit a message for the controller to get all keys from storage, but don't wat for the response. Useful in synchronous code, or when registered observers will handle the response.
 
 **Fields**
 
 - `channel: string | undefined`: The client's channel name, if present.
+
+### Types
+
+```ts
+enum StorageMethod {
+  GET = "__storage_get",
+  SET = "__storage_set",
+  DELETE = "__storage_del",
+  KEYS = "__storage_keys",
+}
+
+type StorageMessageBase = {
+  type: "__storage_internal";
+  channel?: string;
+  id?: string;
+};
+
+type StorageRequest<T = unknown> = StorageMessageBase &
+  (
+    | { method: StorageMethod.GET; key: string; value?: never }
+    | { method: StorageMethod.SET; key: string; value: T }
+    | { method: StorageMethod.DELETE; key: string; value?: never }
+    | { method: StorageMethod.KEYS; key?: never; value?: never }
+  );
+
+type StorageResponse<T = unknown> = StorageMessageBase &
+  (
+    | { method: StorageMethod.GET; key: string; value: T | null }
+    | { method: StorageMethod.SET; key: string; value: T | null }
+    | { method: StorageMethod.DELETE; key: string; value?: never }
+    | { method: StorageMethod.KEYS; key?: never; value?: string[] }
+  );
+
+export type StorageListener<T = unknown> = (
+  event: MessageEvent<{
+    pluginMessage: StorageResponse<T>;
+  }>
+) => void;
+
+export type ObserverKeys = string[] | "*";
+```
+
+MIT © [Tobias Fried](https://github.com/rektdeckard)

@@ -196,7 +196,7 @@ export class StorageClient {
     return promise;
   }
 
-  observe<T>(keys: string[] | "*", listener: StorageListener<T>) {
+  observe<T>(keys: ObserverKeys, listener: StorageListener<T>) {
     const observerId = prid();
     const proxyListener: StorageListener<T | null> = (event) => {
       if (!event.data.pluginMessage) return;

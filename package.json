@@ -1,6 +1,6 @@
 {
   "name": "figments",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Helper utilities for the Figma Plugin API",
   "repository": "https://github.com/rektdeckard/figments.git",
   "author": {
@@ -28,7 +28,7 @@
     "node": ">=10"
   },
   "scripts": {
-    "build": "vite build"
+    "build": "vite build && tsc --emitDeclarationOnly"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.62.0",

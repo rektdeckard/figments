@@ -11,6 +11,7 @@
     "build": "npx webpack --mode=production"
   },
   "dependencies": {
+    "figments": "^0.1.4",
     "react": "^17",
     "react-dom": "^17"
   },
@@ -23,9 +24,9 @@
     "html-webpack-plugin": "^4",
     "style-loader": "^2",
     "ts-loader": "^8",
+    "typescript": "^5.0.2",
     "url-loader": "^4.1.1",
     "webpack": "^4",
-    "webpack-cli": "^4",
-    "typescript": "^5.0.2"
+    "webpack-cli": "^4"
   }
 }

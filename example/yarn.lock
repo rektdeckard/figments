@@ -1261,6 +1261,11 @@ figgy-pudding@^3.5.1:
   resolved "https://registry.yarnpkg.com/figgy-pudding/-/figgy-pudding-3.5.2.tgz#b4eee8148abb01dcf1d1ac34367d59e12fa61d6e"
   integrity sha512-0btnI/H8f2pavGMN8w40mlSKOfTK2SVJmBfBeVIj3kNw0swwgzyRq0d5TJVOwodFmtvpPeWPN/MCcfuWF0Ezbw==
 
+figments@^0.1.4:
+  version "0.1.4"
+  resolved "https://registry.yarnpkg.com/figments/-/figments-0.1.4.tgz#9db3273b8d0a60cfb824d2ec880223367f4fe65c"
+  integrity sha512-v1URN9ut1USnKCcU6vPBzjuewpdFzYGTGlNnGPVvSjwKS/nBsNp9G38CRpZG23yxiWi+b6gXIS/BxRecG0T/Gg==
+
 file-uri-to-path@1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/file-uri-to-path/-/file-uri-to-path-1.0.0.tgz#553a7b8446ff6f684359c445f1e37a05dacc33dd"
