@@ -56,8 +56,8 @@ export default class Storage {
 export class StorageClient {
   #channel?: string;
   #receiver: StorageListener;
-  #observers: Map<string, StorageListener> = new Map();
-  #pending: Map<string, [StorageResolve<unknown>, StorageReject]> = new Map();
+  #observers: Map<string, StorageListener<any>> = new Map();
+  #pending: Map<string, [StorageResolve<any>, StorageReject]> = new Map();
   #enabled: boolean = false;
 
   constructor(channel?: string, observers?: [ObserverKeys, StorageListener][]) {
@@ -205,7 +205,7 @@ export class StorageClient {
       if (
         type !== STORAGE_INTERNAL ||
         (!!this.#channel && channel !== this.#channel) ||
-        !(keys === "*" || keys.includes(key))
+        !(keys === "*" || keys.includes(key!))
       ) {
         return;
       }
@@ -222,8 +222,11 @@ export class StorageClient {
   }
 
   unobserve(observerId: string) {
-    window.removeEventListener("message", this.#observers.get(observerId));
-    this.#observers.delete(observerId);
+    const observer = this.#observers.get(observerId);
+    if (observer) {
+      window.removeEventListener("message", observer);
+      this.#observers.delete(observerId);
+    }
   }
 
   unobserveAll() {
@@ -281,7 +284,7 @@ export class StorageController {
 
   constructor(channel?: string) {
     this.#channel = channel;
-    this.#listener = <T>(pm: StorageRequest<T>, _props) => {
+    this.#listener = <T>(pm: StorageRequest<T>, _pp: OnMessageProperties) => {
       const { type, channel, method } = pm;
       if (
         type !== STORAGE_INTERNAL ||
@@ -346,16 +349,16 @@ export class StorageController {
     assertMainThread();
     this.#assertEnabled();
 
-    const value = await figma.clientStorage.getAsync(req.key);
+    const value = await figma.clientStorage.getAsync(req.key!);
 
-    const message: StorageResponse<T> = {
+    const message = {
       type: STORAGE_INTERNAL,
       method: StorageMethod.GET,
       channel: this.#channel,
       id: req.id,
       key: req.key,
       value,
-    };
+    } as StorageResponse<T>;
 
     figma.ui.postMessage(message);
   }
@@ -364,16 +367,16 @@ export class StorageController {
     assertMainThread();
     this.#assertEnabled();
 
-    await figma.clientStorage.setAsync(req.key, req.value);
+    await figma.clientStorage.setAsync(req.key!, req.value);
 
-    const message: StorageResponse<T> = {
+    const message = {
       type: STORAGE_INTERNAL,
       method: StorageMethod.SET,
       channel: this.#channel,
       id: req.id,
       key: req.key,
       value: req.value,
-    };
+    } as StorageResponse<T>;
 
     figma.ui.postMessage(message);
   }
@@ -382,15 +385,15 @@ export class StorageController {
     assertMainThread();
     this.#assertEnabled();
 
-    await figma.clientStorage.deleteAsync(req.key);
+    await figma.clientStorage.deleteAsync(req.key!);
 
-    const message: StorageResponse = {
+    const message = {
       type: STORAGE_INTERNAL,
       method: StorageMethod.DELETE,
       channel: this.#channel,
       id: req.id,
       key: req.key,
-    };
+    } as StorageResponse;
 
     figma.ui.postMessage(message);
   }

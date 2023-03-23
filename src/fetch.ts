@@ -53,7 +53,7 @@ export default class Fetch {
 
 export class FetchClient {
   #listener: FetchListener;
-  #pending: Map<string, [FetchResolve<unknown>, FetchReject]> = new Map();
+  #pending: Map<string, [FetchResolve<any>, FetchReject]> = new Map();
   #enabled: boolean = false;
 
   constructor() {

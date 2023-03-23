@@ -2,7 +2,6 @@
   "name": "figments",
   "version": "0.1.0",
   "description": "Helper utilities for the Figma Plugin API",
-  "main": "src/index.ts",
   "repository": "https://github.com/rektdeckard/figments.git",
   "homepage": "https://phosphoricons.com",
   "author": {
@@ -12,8 +11,30 @@
   },
   "license": "MIT",
   "private": false,
+  "module": "./dist/index.es.js",
+  "main": "dist/index.umd.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.umd.js",
+      "default": "./dist/index.umd.js"
+    }
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "./dist"
+  ],
+  "engines": {
+    "node": ">=10"
+  },
+  "scripts": {
+    "build": "vite build"
+  },
   "devDependencies": {
     "@figma/plugin-typings": "^1.62.0",
-    "typescript": "^5.0.2"
+    "tslib": "^2.5.0",
+    "typescript": "^5.0.2",
+    "vite": "^4.2.1"
   }
 }
