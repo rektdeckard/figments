@@ -2,6 +2,12 @@
 
 Helper utilities for the Figma Plugin API.
 
+## Install
+
+```sh
+yarn add figments
+```
+
 ## Fetch
 
 Abstracts away the message-passing needed to make network requests from UI code, and lets you call `fetch` in the UI thread just as you do in the plugin main thread.

@@ -1,9 +1,8 @@
 {
   "name": "figments",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Helper utilities for the Figma Plugin API",
   "repository": "https://github.com/rektdeckard/figments.git",
-  "homepage": "https://phosphoricons.com",
   "author": {
     "name": "Tobias Fried",
     "email": "friedtm@gmail.com",
