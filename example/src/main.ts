@@ -1,7 +1,7 @@
 import { Fetch, Storage } from "../../src";
 
 (function main() {
-  Fetch.createController("c1").enable();
+  Fetch.controller.enable();
   Storage.createController("observed").enable();
   Storage.createController("async").enable();
 

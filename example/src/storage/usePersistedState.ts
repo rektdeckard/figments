@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Storage, StorageResponseMethod } from "../../../src";
+import { Storage, StorageMethod } from "../../../src";
 
 type UseStorageOptions = {
   channel?: string;
@@ -18,11 +18,11 @@ const usePersistedState = <T>(
     const observerId = client.current.observe<T>([options.key], (event) => {
       const { method, value } = event.data.pluginMessage;
       switch (method) {
-        case StorageResponseMethod.GET:
-        case StorageResponseMethod.SET:
+        case StorageMethod.GET:
+        case StorageMethod.SET:
           setData(value);
           break;
-        case StorageResponseMethod.DELETE:
+        case StorageMethod.DELETE:
           setData(null);
           break;
         default:

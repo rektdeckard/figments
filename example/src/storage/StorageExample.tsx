@@ -1,8 +1,18 @@
 import * as React from "react";
 
-import { Storage, StorageResponseMethod } from "../../../src";
+import { Storage, StorageClient, StorageMethod } from "../../../src";
 
-const channelA = Storage.createClient("observed");
+const channelA = new StorageClient("observed", [
+  [
+    ["stuff"],
+    (e) => {
+      const { method, key, value } = e.data.pluginMessage;
+      if (method === StorageMethod.SET || method === StorageMethod.DELETE) {
+        console.log(`${key} changed to`, value);
+      }
+    },
+  ],
+]);
 const channelB = Storage.createClient("async");
 
 type Data = {
@@ -27,14 +37,14 @@ const StorageExample = () => {
       const { method, value } = event.data.pluginMessage;
 
       switch (method) {
-        case StorageResponseMethod.GET:
-        case StorageResponseMethod.SET:
+        case StorageMethod.GET:
+        case StorageMethod.SET:
           setStorageA(value);
           break;
-        case StorageResponseMethod.DELETE:
+        case StorageMethod.DELETE:
           setStorageA(null);
           break;
-        case StorageResponseMethod.KEYS:
+        case StorageMethod.KEYS:
           console.log(value);
           break;
         default:
@@ -80,7 +90,9 @@ const StorageExample = () => {
           >
             SET
           </button>
-          <button onClick={() => channelA.requestDelete("stuff")}>DELETE</button>
+          <button onClick={() => channelA.requestDelete("stuff")}>
+            DELETE
+          </button>
         </div>
       </div>
       <pre>{JSON.stringify(storageA, null, 2)}</pre>

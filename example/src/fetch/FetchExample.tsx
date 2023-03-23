@@ -1,17 +1,12 @@
 import * as React from "react";
 
-import { Fetch, TypedFetchResponse } from "../../../src";
+import { Fetch, FetchResponseUnwrapped } from "../../../src";
 
-const client = Fetch.createClient("c1").enable();
-
-type Data = {
-  name: string;
-  bool: boolean;
-};
+const client = Fetch.createClient().enable();
 
 const FetchExample = () => {
   const [url, setUrl] = React.useState<string>("https://httpbin.org/get");
-  const [res, setRes] = React.useState<TypedFetchResponse<unknown> | null>(
+  const [res, setRes] = React.useState<FetchResponseUnwrapped<unknown> | null>(
     null
   );
 
@@ -52,6 +47,10 @@ const FetchExample = () => {
             onClick={async () => {
               const res = await client.fetch(url, {
                 method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  Cookie: "baz=0; qux=1",
+                },
                 body: JSON.stringify({ foo: 42, bar: false }),
               });
               setRes(res);

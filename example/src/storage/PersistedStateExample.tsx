@@ -2,11 +2,6 @@ import * as React from "react";
 
 import usePersistedState from "./usePersistedState";
 
-type Data = {
-  name: string;
-  bool: boolean;
-};
-
 const PersistedStateExample = () => {
   const [nameA, setNameA] = usePersistedState<string | null>(
     {

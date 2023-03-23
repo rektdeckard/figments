@@ -6,13 +6,11 @@ declare function fetch(
 ): Promise<FetchResponse>;
 
 const FETCH_INTERNAL = "__fetch_internal";
-const FETCH_DEFAULT_CHANNEL = "__fetch_default";
 
 type FetchListener<T = unknown> = (
   event: MessageEvent<{
     pluginMessage: {
       type: typeof FETCH_INTERNAL;
-      channel: string;
       id: string;
       res: { data: T; error?: never } | { data?: never; error?: any };
     };
@@ -37,36 +35,33 @@ type FetchReject = (reason?: any) => void;
 
 type FetchRequest = {
   type: typeof FETCH_INTERNAL;
-  channel: string;
   id: string;
-  payload: {
+  req: {
     url: string;
     init?: FetchOptions;
   };
 };
 
 export default class Fetch {
-  static createClient(channel: string) {
-    return new FetchClient(channel);
+  static createClient(...args: ConstructorParameters<typeof FetchClient>) {
+    return new FetchClient(...args);
   }
-  static createController(channel: string) {
-    return new FetchController(channel);
+  static get controller() {
+    return FetchController.self;
   }
 }
 
 export class FetchClient {
-  #channel: string;
   #listener: FetchListener;
   #pending: Map<string, [FetchResolve<unknown>, FetchReject]> = new Map();
   #enabled: boolean = false;
 
-  constructor(channel: string = FETCH_DEFAULT_CHANNEL) {
-    this.#channel = channel;
+  constructor() {
     this.#listener = (event) => {
       if (!event.data.pluginMessage) return;
-      const { type, channel, id, res } = event.data.pluginMessage;
+      const { type, id, res } = event.data.pluginMessage;
 
-      if (type !== FETCH_INTERNAL || !id || channel !== this.#channel) return;
+      if (type !== FETCH_INTERNAL || !id) return;
 
       const [resolve, reject] = this.#pending.get(id) ?? [];
       if (!resolve || !reject) return;
@@ -99,10 +94,6 @@ export class FetchClient {
     return this;
   }
 
-  get channel() {
-    return this.#channel;
-  }
-
   async fetch<T = unknown>(
     url: string,
     init?: FetchOptions
@@ -120,9 +111,8 @@ export class FetchClient {
       {
         pluginMessage: {
           type: FETCH_INTERNAL,
-          channel: this.#channel,
           id,
-          payload: {
+          req: {
             url,
             init,
           },
@@ -136,20 +126,19 @@ export class FetchClient {
 }
 
 export class FetchController {
-  #channel: string;
-  #listener: MessageEventHandler;
-  #enabled: boolean = false;
+  static #self: FetchController;
+  static #listener: MessageEventHandler;
+  static #enabled: boolean = false;
 
-  constructor(channel: string = FETCH_DEFAULT_CHANNEL) {
-    this.#channel = channel;
-    this.#listener = async (pm: FetchRequest, _props) => {
-      const { type, channel, id, payload } = pm;
-      if (type !== FETCH_INTERNAL || channel !== this.#channel) return;
+  private constructor() {
+    FetchController.#listener = async (pm: FetchRequest, _props) => {
+      const { type, id, req } = pm;
+      if (type !== FETCH_INTERNAL) return;
 
       try {
-        this.#assertEnabled();
+        FetchController.#assertEnabled();
 
-        const { url, init } = payload;
+        const { url, init } = req;
 
         const res = await fetch(url, init);
         let data = null;
@@ -162,7 +151,6 @@ export class FetchController {
 
         figma.ui.postMessage({
           type: FETCH_INTERNAL,
-          channel,
           id,
           res: {
             ...res,
@@ -172,7 +160,6 @@ export class FetchController {
       } catch (error) {
         figma.ui.postMessage({
           type: FETCH_INTERNAL,
-          channel,
           id,
           res: { error },
         });
@@ -180,8 +167,12 @@ export class FetchController {
     };
   }
 
-  #assertEnabled() {
-    if (!this.#enabled) {
+  static get self(): FetchController {
+    return this.#self || (this.#self = new FetchController());
+  }
+
+  static #assertEnabled() {
+    if (!FetchController.#enabled) {
       throw new Error("FetchController must be enabled");
     }
   }
@@ -189,20 +180,20 @@ export class FetchController {
   enable() {
     assertMainThread();
 
-    if (!this.#enabled) {
-      figma.ui.on("message", this.#listener);
-      this.#enabled = true;
+    if (!FetchController.#enabled) {
+      figma.ui.on("message", FetchController.#listener);
+      FetchController.#enabled = true;
     }
-    return this;
+    return FetchController.#self;
   }
 
   disable() {
     assertMainThread();
 
-    if (this.#enabled) {
-      figma.ui.off("message", this.#listener);
-      this.#enabled = false;
+    if (FetchController.#enabled) {
+      figma.ui.off("message", FetchController.#listener);
+      FetchController.#enabled = false;
     }
-    return this;
+    return FetchController.#self;
   }
 }

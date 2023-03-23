@@ -2,18 +2,11 @@ import { prid, assertMainThread } from "./utils";
 
 const STORAGE_INTERNAL = "__storage_internal";
 
-export enum StorageRequestMethod {
-  GET = "req_get",
-  SET = "req_set",
-  DELETE = "req_del",
-  KEYS = "req_keys",
-}
-
-export enum StorageResponseMethod {
-  GET = "res_get",
-  SET = "res_set",
-  DELETE = "res_del",
-  KEYS = "res_keys",
+export enum StorageMethod {
+  GET = "__storage_get",
+  SET = "__storage_set",
+  DELETE = "__storage_del",
+  KEYS = "__storage_keys",
 }
 
 type StorageMessageBase = {
@@ -22,23 +15,23 @@ type StorageMessageBase = {
   id?: string;
 };
 
-type StorageRequest<T = unknown> = StorageMessageBase &
+export type StorageRequest<T = unknown> = StorageMessageBase &
   (
-    | { method: StorageRequestMethod.GET; key: string; value?: never }
-    | { method: StorageRequestMethod.SET; key: string; value: T }
-    | { method: StorageRequestMethod.DELETE; key: string; value?: never }
-    | { method: StorageRequestMethod.KEYS; key?: never; value?: never }
+    | { method: StorageMethod.GET; key: string; value?: never }
+    | { method: StorageMethod.SET; key: string; value: T }
+    | { method: StorageMethod.DELETE; key: string; value?: never }
+    | { method: StorageMethod.KEYS; key?: never; value?: never }
   );
 
 export type StorageResponse<T = unknown> = StorageMessageBase &
   (
-    | { method: StorageResponseMethod.GET; key: string; value: T | null }
-    | { method: StorageResponseMethod.SET; key: string; value: T | null }
-    | { method: StorageResponseMethod.DELETE; key: string; value?: never }
-    | { method: StorageResponseMethod.KEYS; key?: never; value?: string[] }
+    | { method: StorageMethod.GET; key: string; value: T | null }
+    | { method: StorageMethod.SET; key: string; value: T | null }
+    | { method: StorageMethod.DELETE; key: string; value?: never }
+    | { method: StorageMethod.KEYS; key?: never; value?: string[] }
   );
 
-type StorageListener<T = unknown> = (
+export type StorageListener<T = unknown> = (
   event: MessageEvent<{
     pluginMessage: StorageResponse<T>;
   }>
@@ -47,12 +40,16 @@ type StorageListener<T = unknown> = (
 type StorageResolve<T> = (value: T | PromiseLike<T>) => void;
 type StorageReject = (reason?: any) => void;
 
+export type ObserverKeys = string[] | "*";
+
 export default class Storage {
-  static createClient(channel?: string) {
-    return new StorageClient(channel);
+  static createClient(...args: ConstructorParameters<typeof StorageClient>) {
+    return new StorageClient(...args);
   }
-  static createController(channel?: string) {
-    return new StorageController(channel);
+  static createController(
+    ...args: ConstructorParameters<typeof StorageController>
+  ) {
+    return new StorageController(...args);
   }
 }
 
@@ -63,7 +60,7 @@ export class StorageClient {
   #pending: Map<string, [StorageResolve<unknown>, StorageReject]> = new Map();
   #enabled: boolean = false;
 
-  constructor(channel?: string) {
+  constructor(channel?: string, observers?: [ObserverKeys, StorageListener][]) {
     this.#channel = channel;
     this.#receiver = (event) => {
       if (!event.data.pluginMessage) return;
@@ -83,6 +80,12 @@ export class StorageClient {
 
       this.#pending.delete(id);
     };
+
+    if (observers) {
+      observers.forEach(([keys, callback]) => {
+        this.observe(keys, callback);
+      });
+    }
   }
 
   #assertEnabled() {
@@ -123,7 +126,7 @@ export class StorageClient {
 
     const pluginMessage: StorageRequest<T> = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.GET,
+      method: StorageMethod.GET,
       channel: this.#channel,
       id,
       key,
@@ -143,7 +146,7 @@ export class StorageClient {
 
     const pluginMessage: StorageRequest<T> = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.SET,
+      method: StorageMethod.SET,
       channel: this.#channel,
       id,
       key,
@@ -164,7 +167,7 @@ export class StorageClient {
 
     const pluginMessage: StorageRequest = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.DELETE,
+      method: StorageMethod.DELETE,
       channel: this.#channel,
       id,
       key,
@@ -184,7 +187,7 @@ export class StorageClient {
 
     const pluginMessage: StorageRequest = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.KEYS,
+      method: StorageMethod.KEYS,
       channel: this.#channel,
       id,
     };
@@ -193,7 +196,7 @@ export class StorageClient {
     return promise;
   }
 
-  observe<T>(keys: string[], listener: StorageListener<T>) {
+  observe<T>(keys: string[] | "*", listener: StorageListener<T>) {
     const observerId = prid();
     const proxyListener: StorageListener<T | null> = (event) => {
       if (!event.data.pluginMessage) return;
@@ -202,7 +205,7 @@ export class StorageClient {
       if (
         type !== STORAGE_INTERNAL ||
         (!!this.#channel && channel !== this.#channel) ||
-        !keys.includes(key)
+        !(keys === "*" || keys.includes(key))
       ) {
         return;
       }
@@ -210,8 +213,10 @@ export class StorageClient {
       listener(event);
     };
 
-    window.addEventListener("message", proxyListener);
-    this.#observers.set(observerId, listener);
+    this.#observers.set(observerId, proxyListener);
+    if (this.#enabled) {
+      window.addEventListener("message", proxyListener);
+    }
 
     return observerId;
   }
@@ -221,10 +226,17 @@ export class StorageClient {
     this.#observers.delete(observerId);
   }
 
+  unobserveAll() {
+    for (const o of this.#observers.values()) {
+      window.removeEventListener("message", o);
+    }
+    this.#observers.clear();
+  }
+
   requestGet(key: string) {
     const pluginMessage: StorageRequest = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.GET,
+      method: StorageMethod.GET,
       channel: this.#channel,
       key,
     };
@@ -234,7 +246,7 @@ export class StorageClient {
   requestSet<T>(key: string, value: T) {
     const pluginMessage: StorageRequest<T> = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.SET,
+      method: StorageMethod.SET,
       channel: this.#channel,
       key,
       value,
@@ -245,7 +257,7 @@ export class StorageClient {
   requestDelete(key: string) {
     const pluginMessage: StorageRequest = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.DELETE,
+      method: StorageMethod.DELETE,
       channel: this.#channel,
       key,
     };
@@ -255,7 +267,7 @@ export class StorageClient {
   requestKeys() {
     const pluginMessage: StorageRequest = {
       type: STORAGE_INTERNAL,
-      method: StorageRequestMethod.KEYS,
+      method: StorageMethod.KEYS,
       channel: this.#channel,
     };
     parent.postMessage({ pluginMessage }, "*");
@@ -271,22 +283,26 @@ export class StorageController {
     this.#channel = channel;
     this.#listener = <T>(pm: StorageRequest<T>, _props) => {
       const { type, channel, method } = pm;
-      if (type !== STORAGE_INTERNAL || channel !== this.channel) return;
+      if (
+        type !== STORAGE_INTERNAL ||
+        (!!this.channel && channel !== this.channel)
+      )
+        return;
 
       switch (method) {
-        case StorageRequestMethod.GET:
+        case StorageMethod.GET:
           this.handleGet(pm);
           break;
 
-        case StorageRequestMethod.SET:
+        case StorageMethod.SET:
           this.handleSet(pm);
           break;
 
-        case StorageRequestMethod.DELETE:
+        case StorageMethod.DELETE:
           this.handleDelete(pm);
           break;
 
-        case StorageRequestMethod.KEYS:
+        case StorageMethod.KEYS:
           this.handleKeys(pm);
           break;
 
@@ -334,7 +350,7 @@ export class StorageController {
 
     const message: StorageResponse<T> = {
       type: STORAGE_INTERNAL,
-      method: StorageResponseMethod.GET,
+      method: StorageMethod.GET,
       channel: this.#channel,
       id: req.id,
       key: req.key,
@@ -352,7 +368,7 @@ export class StorageController {
 
     const message: StorageResponse<T> = {
       type: STORAGE_INTERNAL,
-      method: StorageResponseMethod.SET,
+      method: StorageMethod.SET,
       channel: this.#channel,
       id: req.id,
       key: req.key,
@@ -370,7 +386,7 @@ export class StorageController {
 
     const message: StorageResponse = {
       type: STORAGE_INTERNAL,
-      method: StorageResponseMethod.DELETE,
+      method: StorageMethod.DELETE,
       channel: this.#channel,
       id: req.id,
       key: req.key,
@@ -387,7 +403,7 @@ export class StorageController {
 
     const message: StorageResponse = {
       type: STORAGE_INTERNAL,
-      method: StorageResponseMethod.KEYS,
+      method: StorageMethod.KEYS,
       channel: this.#channel,
       id: req.id,
       value: allKeys,
